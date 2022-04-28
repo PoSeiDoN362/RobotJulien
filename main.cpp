@@ -1,3 +1,4 @@
+// Antoine Sebastian Simon
 #include "mbed.h"
 #include "USBSerial.h"
 
