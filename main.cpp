@@ -10,7 +10,12 @@
 #define VITESSE_MIN_US 10
 #define PERIODE_MOTEUR 20000
 #define K 0
-#define KP -5
+#define KP -20
+#define KI -5
+#define KD -5
+#define TempsWaitMax 0.01
+
+
 
 /* CMPS sensor */
 #define CMPS12_DEFAULT_I2C_ADDRESS 0xC0
@@ -26,7 +31,7 @@ DigitalOut ms1(p27);
 DigitalOut ms2(p26);
 DigitalOut ms3(p25);
 float TempsWait = 0;
-#define TempsWaitMax 0.01
+
 
 /*------------------ Global variables and opbjects -----------------*/
 
@@ -37,6 +42,7 @@ I2C i2c(p9, p10);
 int compass_address = CMPS12_DEFAULT_I2C_ADDRESS;
 char compass_data[31];
 Ticker sensor_ticker;
+Ticker PIDInterrupt;
 Ticker timerInterrupt;
 uint8_t sensorUpdatedFlag = 0;
 int16_t accel[3] = {0};
@@ -63,6 +69,15 @@ float position;
 int erreur;
 int val_roll;
 int flag_print = 0;
+int flag_PID = 0;
+
+int somme_erreur = 0;
+int var_erreur = 0;
+int  erreur_precedente = 0;
+
+int P = 0;
+int I = 0;
+int D = 0;
 
 
 
@@ -90,13 +105,18 @@ void fct_interruptSTEP()
 void fct_interruptPRINT(void)
 {
     flag_print = 1;
-} 
+}
+void fct_interruptPID(void)
+{
+    flag_PID = 1;
+}  
 
 int main()
 {
     sensor_ticker.attach(sensor_update, 100ms);
     flipper.attach(&fct_interruptSTEP, 2.0);
     timerInterrupt.attach(fct_interruptPRINT, 500ms);
+    PIDInterrupt.attach(fct_interruptPID, 100ms);
     serial_port.set_baud(9600);
     serial_port.set_blocking(false);
     serial_port.set_format(
@@ -139,10 +159,24 @@ int main()
         sensorUpdatedFlag = 0;
       }
     /////////////////////////////////////////////////////////////
+        if(flag_PID == 1)
+        {
+            flag_PID = 0;
 
-        erreur = position_voulue - val_roll;// Calcule de la différence entre l'entrée et la sortie du système
-        vitesse = (KP * erreur) + K;
+            somme_erreur = (somme_erreur + erreur) * 0.1;
+            var_erreur = (erreur -  erreur_precedente) / 0.1;
 
+            erreur = position_voulue - val_roll;// Calcule de la différence entre l'entrée et la sortie du système
+            P = (KP * erreur) + K;
+            I = (KI * somme_erreur);
+            D = (KD * var_erreur);
+
+            erreur_precedente = erreur;
+        }
+
+
+
+        vitesse = P + I + D;
 
         //vitesse = (KP * erreur) + K; // kp * (sp-pv) + U0 --> Calcul régissant le système
         
