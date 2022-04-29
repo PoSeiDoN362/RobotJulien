@@ -6,6 +6,15 @@
 #define MAX_VITESSE_DEFAULT 30
 #define TEMPS_BAS 2
 
+#define VITESSE_MAX_US 2000
+#define VITESSE_MIN_US 10
+#define PERIODE_MOTEUR 20000
+#define K 0
+#define KP -5
+
+/* CMPS sensor */
+#define CMPS12_DEFAULT_I2C_ADDRESS 0xC0
+
 static BufferedSerial serial_port(USBTX, USBRX);
 
 DigitalOut dir(p29);
@@ -17,12 +26,30 @@ DigitalOut ms1(p27);
 DigitalOut ms2(p26);
 DigitalOut ms3(p25);
 float TempsWait = 0;
+#define TempsWaitMax 0.01
+
+/*------------------ Global variables and opbjects -----------------*/
+
+
+
+/* CMPS 12 sensor */
+I2C i2c(p9, p10);
+int compass_address = CMPS12_DEFAULT_I2C_ADDRESS;
+char compass_data[31];
+Ticker sensor_ticker;
+Ticker timerInterrupt;
+uint8_t sensorUpdatedFlag = 0;
+int16_t accel[3] = {0};
+int16_t gyro[3] = {0};
+float roll_sensor[3] = {0};
+uint8_t roll_sensor_index = 1;
+char cmps_reg[31];
 
 int i;
 Timeout flipper;
 uint32_t num1 = 1;
 uint32_t num2 = 2;
-int vitesse = 30;
+int vitesse = 0;
 int acceleration= 0;
 int moteur_ratio = 0;
 float step_deg = 0;
@@ -30,19 +57,46 @@ int freq;
 float incr_vitesse;
 float decr_vitesse;
 
-// main() runs in its own thread in the OS
+float position_voulue = 0;
+float position;
+
+int erreur;
+int val_roll;
+int flag_print = 0;
+
+
+
+/*---------------------------- Functions ---------------------------*/
+void sensor_update(void) {
+  sensorUpdatedFlag = 1;
+  //led1 = !led1;
+}
+
 
 void fct_interruptSTEP()
 {
-    step = !step;
-    step2 = !step2;
+    if (TempsWait > TempsWaitMax) {
+        TempsWait = TempsWaitMax;
+    }
+    else {
+        step = !step;
+        step2 = !step2;
+    } 
+    
     flipper.attach(&fct_interruptSTEP, TempsWait);
 
-}    
+}
+
+void fct_interruptPRINT(void)
+{
+    flag_print = 1;
+} 
 
 int main()
 {
+    sensor_ticker.attach(sensor_update, 100ms);
     flipper.attach(&fct_interruptSTEP, 2.0);
+    timerInterrupt.attach(fct_interruptPRINT, 500ms);
     serial_port.set_baud(9600);
     serial_port.set_blocking(false);
     serial_port.set_format(
@@ -58,23 +112,72 @@ int main()
     decr_vitesse = 0.9;
 
     while (true) {
-        
-        serial_port.read(buf, sizeof(buf));
 
-        if (buf[0] == 'z') //pour augmenter la vitesse avec z sur le clavier
+
+    ////// Interrupt pour update la valeur Roll///////
+      if (sensorUpdatedFlag == 1) {
+
+        // Read sensor
+        i2c.write(compass_address, 0, 31);
+        i2c.read(compass_address, cmps_reg, sizeof(cmps_reg));
+
+        val_roll = cmps_reg[5];
+
+        if(val_roll > 127)
         {
-            vitesse = vitesse * incr_vitesse;
-            if(vitesse < 1)
-            {
-                vitesse = vitesse + 2;
-            }
+            val_roll = val_roll - 255;
+        } 
+        //printf("val_roll :%d\n", val_roll);
+
+        if (val_roll && 0x03 != 0x03) {
+          printf("Calibrating...");
+        } else {
+          roll_sensor[0] = atan2(accel[0], accel[2]) * 360 / 2 / 3.14159;
+          roll_sensor[1] = roll_sensor[1] + gyro[1] * (-0.007);
         }
-        else if (buf[0] == 'x') {//pour descendre la vitesse avec x sur le clavier
-            vitesse = vitesse * decr_vitesse;
+
+        sensorUpdatedFlag = 0;
+      }
+    /////////////////////////////////////////////////////////////
+
+        erreur = position_voulue - val_roll;// Calcule de la différence entre l'entrée et la sortie du système
+        vitesse = (KP * erreur) + K;
+
+
+        //vitesse = (KP * erreur) + K; // kp * (sp-pv) + U0 --> Calcul régissant le système
+        
+        
+        if(val_roll >= 0 && val_roll < 40)
+        {
+            //vitesse = vitesse * -1;
+
+            //vitesse = 30;
+            dir = 0;
+            dir2 = 1;
 
         }
-        buf[0] = 0;//remettre le buffer du clavier à 0
-        
+        else if(val_roll <= -1 && val_roll > -40)
+        {
+            vitesse = vitesse * -1;
+
+            //vitesse = 30;
+            dir = 1;
+            dir2 = 0;
+
+        }
+        else 
+        {
+            vitesse = 0;
+        }
+
+        if(flag_print == 1)
+        {
+            printf("Vitesse = %d\n", vitesse);
+            printf("Angle = %d\n", val_roll);
+            flag_print = 0;
+        }
+
+
         /////////////////////Section Etage Vitesse/////////////////////////////////////
         if(vitesse > 1500 && moteur_ratio == 2)// 1/2 vers full
         {
@@ -173,13 +276,12 @@ int main()
 
         ////////////////////////////////////////////////////////////////////////////////
 
-        printf("Vitesse: %5d Ratio: %2d freq: %5d \r\n", vitesse, moteur_ratio, freq);//affichage 
+        //printf("Vitesse: %5d Ratio: %2d freq: %5d \r\n", vitesse, moteur_ratio, freq);//affichage 
 
 
 
         //Direction du moteur, probablement à modifier pour la suite du projet
-        dir = 0;
-        dir2 = 1;
+
         
     }
 }
