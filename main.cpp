@@ -81,6 +81,7 @@ float P = 0.0;
 float I = 0.0;
 float D = 0.0;
 
+int flag_position = 1;
 
 
 /*---------------------------- Functions ---------------------------*/
@@ -196,16 +197,32 @@ int main()
         
         //vitesse = (KP * erreur) + K; // kp * (sp-pv) + U0 --> Calcul régissant le système
         
-        
-        
+        if (val_roll > 40 || val_roll < -40)
+        {
+            flag_position = 1;
+            en = 1;
+            somme_erreur = 0;
+        }
+
+        if(flag_position == 1)
+        {
+            somme_erreur = 0;
+            if(val_roll == 0)
+            {
+                flag_position = 0;
+                en = 0;
+                somme_erreur = 0;
+            } 
+        }
+
 
    
         if(flag_print == 1)
         {
             //printf("Vitesse = %f \n", vitesse);
-            //printf("Angle = %d \n", val_roll);
+            printf("Angle = %d \n", val_roll);
             //printf("c = %f\n", a);
-            printf("erreur = %i \n", erreur);
+            //printf("erreur = %i \n", erreur);
             printf("P = %f \n", P);
             printf("I = %f \n", I);
             //printf("D = %f \n", D);
