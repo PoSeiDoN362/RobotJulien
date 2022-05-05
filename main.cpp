@@ -1,6 +1,7 @@
 // Antoine Sebastian Simon
 #include "mbed.h"
-#include "USBSerial.h"
+// #include "USBSerial.h"
+// #include "stdio.h"
 
 #define MAX_VITESSE_DEG 720
 #define MAX_VITESSE_DEFAULT 30
@@ -11,9 +12,10 @@
 #define PERIODE_MOTEUR 20000
 #define K 0
 #define KP -20
-#define KI -5
-#define KD -5
+#define KI -20
+#define KD -20
 #define TempsWaitMax 0.01
+#define VITESSE_MIN 0.1
 
 
 
@@ -55,7 +57,7 @@ int i;
 Timeout flipper;
 uint32_t num1 = 1;
 uint32_t num2 = 2;
-int vitesse = 0;
+float vitesse = 0.0;
 int acceleration= 0;
 int moteur_ratio = 0;
 float step_deg = 0;
@@ -66,18 +68,18 @@ float decr_vitesse;
 float position_voulue = 0;
 float position;
 
-int erreur;
+int erreur = 0;
 int val_roll;
 int flag_print = 0;
 int flag_PID = 0;
 
-int somme_erreur = 0;
+float somme_erreur = 0.0;
 int var_erreur = 0;
 int  erreur_precedente = 0;
 
-int P = 0;
-int I = 0;
-int D = 0;
+float P = 0.0;
+float I = 0.0;
+float D = 0.0;
 
 
 
@@ -161,56 +163,54 @@ int main()
     /////////////////////////////////////////////////////////////
         if(flag_PID == 1)
         {
-            flag_PID = 0;
-
-            somme_erreur = (somme_erreur + erreur) * 0.1;
+            erreur = position_voulue - val_roll;// Calcule de la différence entre l'entrée et la sortie du système
+            somme_erreur = somme_erreur + erreur * 0.1;
             var_erreur = (erreur -  erreur_precedente) / 0.1;
 
-            erreur = position_voulue - val_roll;// Calcule de la différence entre l'entrée et la sortie du système
+            
             P = (KP * erreur) + K;
             I = (KI * somme_erreur);
             D = (KD * var_erreur);
 
             erreur_precedente = erreur;
+
+            vitesse = P + I;
+            flag_PID = 0;
+            
+            if (vitesse >= 0)
+            {
+                vitesse = vitesse; // Keep speed positive
+                dir = 0;
+                dir2 = 1;
+            }
+            else
+            {
+                vitesse = vitesse * -1; // Make speed positive
+                dir = 1;
+                dir2 = 0;
+            }
         }
 
 
 
-        vitesse = P + I + D;
-
+        
         //vitesse = (KP * erreur) + K; // kp * (sp-pv) + U0 --> Calcul régissant le système
         
         
-        if(val_roll >= 0 && val_roll < 40)
-        {
-            //vitesse = vitesse * -1;
+        
 
-            //vitesse = 30;
-            dir = 0;
-            dir2 = 1;
-
-        }
-        else if(val_roll <= -1 && val_roll > -40)
-        {
-            vitesse = vitesse * -1;
-
-            //vitesse = 30;
-            dir = 1;
-            dir2 = 0;
-
-        }
-        else 
-        {
-            vitesse = 0;
-        }
-
+   
         if(flag_print == 1)
         {
-            printf("Vitesse = %d\n", vitesse);
-            printf("Angle = %d\n", val_roll);
+            //printf("Vitesse = %f \n", vitesse);
+            //printf("Angle = %d \n", val_roll);
+            //printf("c = %f\n", a);
+            printf("erreur = %i \n", erreur);
+            printf("P = %f \n", P);
+            printf("I = %f \n", I);
+            //printf("D = %f \n", D);
             flag_print = 0;
         }
-
 
         /////////////////////Section Etage Vitesse/////////////////////////////////////
         if(vitesse > 1500 && moteur_ratio == 2)// 1/2 vers full
