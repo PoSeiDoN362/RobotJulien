@@ -74,7 +74,7 @@ int flag_print = 0;
 int flag_PID = 0;
 
 float somme_erreur = 0.0;
-int var_erreur = 0;
+float var_erreur = 0.0;
 int  erreur_precedente = 0;
 
 float P = 0.0;
@@ -167,7 +167,6 @@ int main()
             erreur = position_voulue - val_roll;// Calcule de la différence entre l'entrée et la sortie du système
             somme_erreur = somme_erreur + erreur * 0.1;
             var_erreur = (erreur -  erreur_precedente) / 0.1;
-
             
             P = (KP * erreur) + K;
             I = (KI * somme_erreur);
@@ -175,7 +174,7 @@ int main()
 
             erreur_precedente = erreur;
 
-            vitesse = P + I;
+            vitesse = P + I + D;
             flag_PID = 0;
             
             if (vitesse >= 0)
@@ -202,6 +201,7 @@ int main()
             flag_position = 1;
             en = 1;
             somme_erreur = 0;
+            erreur_precedente = 0;
         }
 
         if(flag_position == 1)
@@ -212,6 +212,7 @@ int main()
                 flag_position = 0;
                 en = 0;
                 somme_erreur = 0;
+                erreur_precedente = 0;
             } 
         }
 
@@ -220,12 +221,12 @@ int main()
         if(flag_print == 1)
         {
             //printf("Vitesse = %f \n", vitesse);
-            printf("Angle = %d \n", val_roll);
+            //printf("Angle = %d \n", val_roll);
             //printf("c = %f\n", a);
             //printf("erreur = %i \n", erreur);
             printf("P = %f \n", P);
             printf("I = %f \n", I);
-            //printf("D = %f \n", D);
+            printf("D = %f \n", D);
             flag_print = 0;
         }
 
