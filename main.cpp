@@ -15,9 +15,11 @@
 #define KI -25
 #define KD -0.02
 //----------PID2 ----------//
-#define KP2 5
+#define KP2 0.01
 #define KI2 5
 #define KD2 0.02
+#define ANGLE_MAX 30
+#define ANGLE_MIN -30
 //--------------------------//
 #define TempsWaitMax 0.01
 #define VITESSE_MIN 0.1
@@ -45,7 +47,6 @@ int compass_address = CMPS12_DEFAULT_I2C_ADDRESS;
 char compass_data[31];
 Ticker sensor_ticker;
 Ticker PIDInterrupt;
-Ticker PIDInterrupt2;
 Ticker timerInterrupt;
 uint8_t sensorUpdatedFlag = 0;
 int16_t accel[3] = {0};
@@ -121,16 +122,25 @@ void fct_interruptSTEP() {
   flipper.attach(&fct_interruptSTEP, TempsWait);
 }
 
+int flag_PID2_compteur = 0;
 void fct_interruptPRINT(void) { flag_print = 1; }
-void fct_interruptPID(void) { flag_PID = 1; }
-void fct_interruptPID2(void) { flag_PID2 = 1; }
+void fct_interruptPID(void) { 
+    
+    flag_PID = 1;
+
+    flag_PID2_compteur = (flag_PID2_compteur+1) % 5;
+    if (flag_PID2_compteur >= 4) {
+        flag_PID2 = 1;
+    }
+
+ }
+void fct_interruptPID2(void) {  }
 
 int main() {
   sensor_ticker.attach(sensor_update, 100ms);
   flipper.attach(&fct_interruptSTEP, 2.0);
   timerInterrupt.attach(fct_interruptPRINT, 500ms);
   PIDInterrupt.attach(fct_interruptPID, 100ms);
-  PIDInterrupt2.attach(fct_interruptPID2, 500ms);
   serial_port.set_baud(9600);
   serial_port.set_blocking(false);
   serial_port.set_format(
@@ -172,23 +182,29 @@ int main() {
 
     if (flag_PID2 == 1) {
       erreur2 = position_voulue_2 - a; // Calcule de la différence entre l'entrée et la sortie du système
-      somme_erreur2 = somme_erreur2 + erreur2 * 0.1;
-      var_erreur2 = (erreur2 - erreur_precedente2) / 0.1;
+      somme_erreur2 = somme_erreur2 + erreur2 * 0.5;
+      var_erreur2 = (erreur2 - erreur_precedente2) / 0.5;
 
       P_2 = (KP2 * erreur2) + K;
       I_2 = (KI2 * somme_erreur2);
       D_2 = (KD2 * var_erreur2);
 
       erreur_precedente2 = erreur2;
+      sortie_position = P_2; //+ I_2 + D_2;
+      
+    if (sortie_position > ANGLE_MAX) {
+      sortie_position = ANGLE_MAX;
+    }
+    else if (sortie_position < ANGLE_MIN) {
+      sortie_position = ANGLE_MIN;
+    } 
 
-      sortie_position = P_2 + I_2 + D_2;
       flag_PID2 = 0;
     }
 
     /////////////////////////////////////////////////////////////
     if (flag_PID == 1) {
-      erreur = position_voulue - val_roll; // Calcule de la différence entre
-                                           // l'entrée et la sortie du système
+      erreur = sortie_position - val_roll; // Calcule de la différence entre l'entrée et la sortie du système
       somme_erreur = somme_erreur + erreur * 0.1;
       var_erreur = (erreur - erreur_precedente) / 0.1;
 
@@ -234,14 +250,18 @@ int main() {
 
     if (flag_print == 1) {
       // printf("Vitesse = %f \n", vitesse);
-      printf("Angle = %d \n", val_roll);
+    
+      printf("position voulue = %d \n", position_voulue_2);
+      printf("a = %d \n", a);
+      printf("position vers 2e PID = %d \n", sortie_position);
       // printf("c = %f\n", a);
       // printf("erreur = %i \n", erreur);
       // printf("P = %f \n", P);
       // printf("I = %f \n", I);
       // printf("D = %f \n", D);
-      printf("a = %d \n", a);
-      printf("position = %d \n", sortie_position);
+      printf("Angle = %d \n", val_roll);
+      printf("Vitesse = %f \n", vitesse);
+
       flag_print = 0;
     }
 
