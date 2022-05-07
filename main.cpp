@@ -1,34 +1,25 @@
-// Antoine Sebastian Simon
+// ÉQUIPE: Antoine, Sebastian, Simon
+// DESCRIPTION: Dans ce code, on retrouve le projet final du cours 243-620.
+//              Le projet consiste à mettre en fonction un contrôleur PID
+//              pour équilibrer un robot à deux roues qui utilise des stepper moteurs.
+
+//--------------------------// Includes nécessaires pour le code
 #include "mbed.h"
-// #include "USBSerial.h"
-// #include "stdio.h"
 
-#define MAX_VITESSE_DEG 720
-#define MAX_VITESSE_DEFAULT 30
-#define TEMPS_BAS 2
-
-#define VITESSE_MAX_US 2000
-#define VITESSE_MIN_US 10
-#define PERIODE_MOTEUR 20000
+//--------------------------// liste de defines pour notre controleur PID
 #define K 0
-#define KP -25
-#define KI -25
-#define KD -0.02
-//----------PID2 ----------//
-#define KP2 0.01
-#define KI2 5
-#define KD2 0.02
-#define ANGLE_MAX 30
-#define ANGLE_MIN -30
+#define KP -25              // Gain Proportionnel
+#define KI -25              // Gain Intégral
+#define KD -0.02            // Gain Dérivées
+#define POSITION_VOULUE 0   // Position pour garder l'équilibre
 //--------------------------//
 #define TempsWaitMax 0.01
-#define VITESSE_MIN 0.1
 
-/* CMPS sensor */
+//--------------------------// Liste de defines pour adresse I2C du capteur CMPS12
 #define CMPS12_DEFAULT_I2C_ADDRESS 0xC0
 
+//-----------------------------------------------// Definitions de notre pinout pour le contrôleur LPC
 static BufferedSerial serial_port(USBTX, USBRX);
-
 DigitalOut dir(p29);
 DigitalOut dir2(p21);
 DigitalOut step(p30);
@@ -37,73 +28,61 @@ DigitalOut en(p28);
 DigitalOut ms1(p27);
 DigitalOut ms2(p26);
 DigitalOut ms3(p25);
-float TempsWait = 0;
 
 /*------------------ Global variables and opbjects -----------------*/
 
-/* CMPS 12 sensor */
+//-------------------------------------------------// Variables pour le CMPS 12 sensor
 I2C i2c(p9, p10);
-int compass_address = CMPS12_DEFAULT_I2C_ADDRESS;
-char compass_data[31];
 Ticker sensor_ticker;
 Ticker PIDInterrupt;
 Ticker timerInterrupt;
+
+int compass_address = CMPS12_DEFAULT_I2C_ADDRESS;
+
 uint8_t sensorUpdatedFlag = 0;
+uint8_t roll_sensor_index = 1;
+
 int16_t accel[3] = {0};
 int16_t gyro[3] = {0};
+
 float roll_sensor[3] = {0};
-uint8_t roll_sensor_index = 1;
+
+char compass_data[31];
 char cmps_reg[31];
 
-int i;
+//----------------------------------------------// Variables pour les stepper motors
 Timeout flipper;
-uint32_t num1 = 1;
-uint32_t num2 = 2;
-float vitesse = 0.0;
-int acceleration = 0;
+
 int moteur_ratio = 0;
+int freq = 0;
+
+float TempsWait = 0;
+float vitesse = 0.0;
 float step_deg = 0;
-int freq;
-float incr_vitesse;
-float decr_vitesse;
+float incr_vitesse = 0.0;
+float decr_vitesse = 0.0;
 
-int position_voulue = 0;
-int position_voulue_2 = 500;
-float position;
-
+//---------------------------------------------// Variables pour PID
 int erreur = 0;
-int val_roll;
-int flag_print = 0;
+int val_roll = 0;
+int erreur_precedente = 0;
 int flag_PID = 0;
-int flag_PID2 = 0;
+
 float somme_erreur = 0.0;
 float var_erreur = 0.0;
-int erreur_precedente = 0;
-
 float P = 0.0;
 float I = 0.0;
 float D = 0.0;
 
-// ------- PID 2 -------------//
-int a = 0;
-int sortie_position = 0;
-int erreur2 = 0;
-float somme_erreur2 = 0.0;
-float var_erreur2 = 0.0;
-int erreur_precedente2 = 0;
-
-float P_2 = 0.0;
-float I_2 = 0.0;
-float D_2 = 0.0;
+//---------------------------------// Variable pour notre fonction print
+int flag_print = 0;
 
 //---------------------------------//
-
 int flag_position = 1;
 
 /*---------------------------- Functions ---------------------------*/
 void sensor_update(void) {
   sensorUpdatedFlag = 1;
-  // led1 = !led1;
 }
 
 void fct_interruptSTEP() {
@@ -112,29 +91,18 @@ void fct_interruptSTEP() {
   } else {
     step = !step;
     step2 = !step2;
-    if (dir == 0 && dir2 == 1) {
-      a++;
-    } else if (dir == 1 && dir2 == 0) {
-      a--;
-    }
   }
-
   flipper.attach(&fct_interruptSTEP, TempsWait);
 }
 
-int flag_PID2_compteur = 0;
-void fct_interruptPRINT(void) { flag_print = 1; }
-void fct_interruptPID(void) { 
-    
+
+void fct_interruptPRINT(void) {
+  flag_print = 1;
+}
+
+void fct_interruptPID(void) {
     flag_PID = 1;
-
-    flag_PID2_compteur = (flag_PID2_compteur+1) % 5;
-    if (flag_PID2_compteur >= 4) {
-        flag_PID2 = 1;
-    }
-
- }
-void fct_interruptPID2(void) {  }
+}
 
 int main() {
   sensor_ticker.attach(sensor_update, 100ms);
@@ -155,10 +123,8 @@ int main() {
   decr_vitesse = 0.9;
 
   while (true) {
-
     ////// Interrupt pour update la valeur Roll///////
     if (sensorUpdatedFlag == 1) {
-
       // Read sensor
       i2c.write(compass_address, 0, 31);
       i2c.read(compass_address, cmps_reg, sizeof(cmps_reg));
@@ -168,7 +134,6 @@ int main() {
       if (val_roll > 127) {
         val_roll = val_roll - 255;
       }
-      // printf("val_roll :%d\n", val_roll);
 
       if (val_roll && 0x03 != 0x03) {
         printf("Calibrating...");
@@ -180,31 +145,9 @@ int main() {
       sensorUpdatedFlag = 0;
     }
 
-    if (flag_PID2 == 1) {
-      erreur2 = position_voulue_2 - a; // Calcule de la différence entre l'entrée et la sortie du système
-      somme_erreur2 = somme_erreur2 + erreur2 * 0.5;
-      var_erreur2 = (erreur2 - erreur_precedente2) / 0.5;
-
-      P_2 = (KP2 * erreur2) + K;
-      I_2 = (KI2 * somme_erreur2);
-      D_2 = (KD2 * var_erreur2);
-
-      erreur_precedente2 = erreur2;
-      sortie_position = P_2; //+ I_2 + D_2;
-      
-    if (sortie_position > ANGLE_MAX) {
-      sortie_position = ANGLE_MAX;
-    }
-    else if (sortie_position < ANGLE_MIN) {
-      sortie_position = ANGLE_MIN;
-    } 
-
-      flag_PID2 = 0;
-    }
-
     /////////////////////////////////////////////////////////////
     if (flag_PID == 1) {
-      erreur = sortie_position - val_roll; // Calcule de la différence entre l'entrée et la sortie du système
+      erreur = POSITION_VOULUE - val_roll; // Calcule de la différence entre l'entrée et la sortie du système
       somme_erreur = somme_erreur + erreur * 0.1;
       var_erreur = (erreur - erreur_precedente) / 0.1;
 
@@ -228,9 +171,6 @@ int main() {
       }
     }
 
-    // vitesse = (KP * erreur) + K; // kp * (sp-pv) + U0 --> Calcul régissant le
-    // système
-
     if (val_roll > 40 || val_roll < -40) {
       flag_position = 1;
       en = 1;
@@ -249,24 +189,18 @@ int main() {
     }
 
     if (flag_print == 1) {
-      // printf("Vitesse = %f \n", vitesse);
-    
-      printf("position voulue = %d \n", position_voulue_2);
-      printf("a = %d \n", a);
-      printf("position vers 2e PID = %d \n", sortie_position);
-      // printf("c = %f\n", a);
-      // printf("erreur = %i \n", erreur);
-      // printf("P = %f \n", P);
-      // printf("I = %f \n", I);
-      // printf("D = %f \n", D);
+      printf("erreur = %i \n", erreur);
+      printf("P = %f \n", P);
+      printf("I = %f \n", I);
+      printf("D = %f \n", D);
       printf("Angle = %d \n", val_roll);
       printf("Vitesse = %f \n", vitesse);
 
       flag_print = 0;
     }
-
-    /////////////////////Section Etage
-    ///Vitesse/////////////////////////////////////
+    
+    //--------------------------------Section Etage
+    //--------------------------------Vitesse
     if (vitesse > 1500 && moteur_ratio == 2) // 1/2 vers full
     {
       moteur_ratio = 1;
@@ -322,53 +256,39 @@ int main() {
       decr_vitesse = 0.9;
     }
 
-    switch (moteur_ratio) // switch case pour changer le ratio du
-                          // moteur(configuration driver)
+    switch (moteur_ratio) // switch case pour changer le ratio du moteur(configuration driver)
     {
     case 16:
       ms1 = 1;
       ms2 = 1;
       ms3 = 1;
       break;
-
     case 8:
       ms1 = 1;
       ms2 = 1;
       ms3 = 0;
       break;
-
     case 4:
       ms1 = 0;
       ms2 = 1;
       ms3 = 0;
       break;
-
     case 2:
       ms1 = 1;
       ms2 = 0;
       ms3 = 0;
       break;
-
     case 1:
       ms1 = 0;
       ms2 = 0;
       ms3 = 0;
       break;
-
     default:
       break;
     }
 
     step_deg = 1.8 / moteur_ratio; // calculer les nouveaux steps du moteur
     freq = vitesse / step_deg;     // calculer la frequence
-    TempsWait = (1.0 / freq) /
-                2; // temps haut et bas pour l'interruption selon la frequence
-
-    ////////////////////////////////////////////////////////////////////////////////
-
-    // printf("Vitesse: %5d Ratio: %2d freq: %5d \r\n", vitesse, moteur_ratio,
-    // freq);//affichage
-
-    // Direction du moteur, probablement à modifier pour la suite du projet
+    TempsWait = (1.0 / freq) / 2; // temps haut et bas pour l'interruption selon la frequence
   }
 }
